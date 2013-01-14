@@ -1,0 +1,170 @@
+#!/bin/sh
+
+# dw - emit disk warnings
+
+# Copyright (c) 2012 Jason Schulz <http://github.com/uxcn>
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# author: jason
+
+USAGE="dw <mnt> <(-|+)size[k|m|g|t|p|e|z|y][%]>"
+
+if (( $# != 2 )); then
+
+    echo -e ${USAGE}
+    exit 1
+
+fi
+
+MOUNT=$1
+SIZE=$2
+
+if [[ ! ${SIZE} =~ ^[-+][0-9]+[kmgtpezy]?%?$ ]]; then
+    
+    echo -e ${USAGE}
+    exit 1
+
+fi
+
+if [[ ! -e ${MOUNT} ]]; then
+
+    exit 0
+
+fi
+
+MODE=${SIZE:0:1}
+SIZE=${SIZE:1}
+
+if [[ ${SIZE:${#SIZE} - 1} == '%' ]]; then
+    
+    SIZE=${SIZE:0:${#SIZE} - 1}
+
+    if [[ ! ${SIZE} =~ ^[0-9]+$ ]]; then
+    
+        echo -e ${USAGE}
+        exit 1
+
+    fi
+
+    if (( ${SIZE} < 0 || ${SIZE} > 100 )); then
+
+        echo -e ${USAGE}
+        exit 1
+
+    fi
+
+    PCT="true"
+
+elif [[ ${SIZE:${#SIZE} - 1:1} == [kmgtpezy] ]]; then
+
+    case ${SIZE:${#SIZE} - 1:1} in
+
+        k)
+            MUL=10
+            ;;
+        m)
+            MUL=20
+            ;;
+        g)
+            MUL=30
+            ;;
+        t)
+            MUL=40
+            ;;
+        p)
+            MUL=50
+            ;;
+        e)
+            MUL=60
+            ;;
+        z)
+            MUL=70
+            ;;
+        y)
+            MUL=80
+            ;;
+
+    esac
+
+    CMUL=${SIZE:${#SIZE} - 1:1}
+    SIZE=${SIZE:0:${#SIZE} - 1}
+
+    let SIZE="${SIZE} << ${MUL}"
+    
+fi
+
+
+DF=( `/bin/df -B 1 ${MOUNT} | tail -n +2` )
+
+USED=${DF[2]}
+AVAIL=${DF[3]}
+
+let USED_PCT="(100 * ${USED}) / (${USED} + ${AVAIL})"
+let AVAIL_PCT="(100 * ${AVAIL}) / (${USED} + ${AVAIL})"
+
+case ${MODE} in
+
+    +)
+
+        if [[ -n ${PCT} ]]; then
+
+            if (( ${SIZE} <= ${USED_PCT} )); then
+
+                echo -e "warn: ${MOUNT} (${USED_PCT}% used)"
+
+            fi
+
+        else
+
+            if (( ${SIZE} <= ${USED} )); then
+
+                let USED="${USED} >> $MUL"
+                echo -e "warn: ${MOUNT} (${USED}${CMUL} used)"
+
+            fi
+
+        fi
+
+        ;;
+
+    -)
+
+        if [[ -n ${PCT} ]]; then
+
+            if (( ${SIZE} >= ${AVAIL_PCT} )); then
+
+                echo -e "warn: ${MOUNT} (${AVAIL_PCT}% available)"
+
+            fi
+
+        else
+
+            if (( ${SIZE} >= ${AVAIL} )); then
+
+                let AVAIL="${AVAIL} >> $MUL"
+                echo -e "warn: ${MOUNT} (${AVAIL}${CMUL} available)"
+
+            fi
+
+        fi
+
+        ;;
+    
+esac
